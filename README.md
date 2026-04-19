@@ -2,6 +2,8 @@
 
 A cute, browser-based mini-RTS designed for a 6–8 year old. Built with Phaser 3 and Vite. Single-player vs. a red AI rival today; 2-player head-to-head with fog of war and minimap is on the roadmap.
 
+<img width="1184" height="767" alt="Screenshot 2026-04-19 at 14 04 45" src="https://github.com/user-attachments/assets/e33f77c2-b1c6-47a1-8592-5c25fc5724bc" />
+
 ## Quick start
 
 ```bash
