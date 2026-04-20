@@ -75,6 +75,23 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet('findables', 'assets/items/RANDOM_SMALL_FINDABLES.png', {
       frameWidth: 32, frameHeight: 32
     });
+
+    // Audio — music + sfx (MP3). Failures are logged but don't block the game.
+    // Music keys consumed by systems/audio.js state machine (D-012).
+    this.load.audio('theme-normal',  'assets/audio/background-theme-normal.mp3');
+    this.load.audio('theme-attack',  'assets/audio/background-theme-attack.mp3');
+    this.load.audio('ambient-layer', 'assets/audio/ambient-layer.mp3');
+    this.load.audio('villager-action',  'assets/audio/villager-action.mp3');
+    this.load.audio('guard-action',     'assets/audio/guard-action.mp3');
+    this.load.audio('collect-wood',     'assets/audio/collect-wood.mp3');
+    this.load.audio('collect-food',     'assets/audio/collect-food.mp3');
+    this.load.audio('collect-gold',     'assets/audio/collect-gold.mp3');
+    this.load.audio('level-up',         'assets/audio/level-up.mp3');
+    this.load.audio('upgrade',          'assets/audio/upgrade.mp3');
+
+    this.load.on('loaderror', (file) => {
+      console.warn(`[boot] asset failed to load: ${file.key} (${file.src})`);
+    });
   }
 
   create() {

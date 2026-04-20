@@ -9,6 +9,7 @@ import {
   revealAll, toggleDebugFog, isFogDisabled,
   FOW_UNSEEN, FOW_EXPLORED, FOW_VISIBLE
 } from '../systems/fogOfWar.js';
+import * as combatState from '../systems/combatState.js';
 import { generateMap } from '../data/mapgen.js';
 import { gameState, resetGameState } from '../data/gameState.js';
 import { Villager } from '../data/Villager.js';
@@ -103,7 +104,43 @@ export class GameScene extends Phaser.Scene {
       this._updateFogOverlay();
     });
 
-    audio.registerAudio(this);
+    audio.AudioManager.attach(this);
+
+    // Combat-reactive music (D-012): start peaceful, subscribe to state events.
+    combatState.reset();
+    const unsubStart = combatState.onCombatStarted(() => audio.AudioManager.setMusicState('combat'));
+    const unsubEnd   = combatState.onCombatEnded  (() => audio.AudioManager.setMusicState('peaceful'));
+
+    audio.AudioManager.resumeContext().then(() => {
+      audio.AudioManager.setMusicState('peaceful');
+    });
+
+    // Debug: 'C' toggles combat override
+    this.input.keyboard.on('keydown-C', () => {
+      const s = combatState.currentState();
+      if (s === 'combat') combatState.forcePeaceful();
+      else                combatState.forceCombat();
+    });
+
+    // Pause audio on tab blur, restore on focus
+    if (!this._audioBlurBound) {
+      this._audioBlurBound = true;
+      this._onBlur  = () => audio.AudioManager.onBlur();
+      this._onFocus = () => audio.AudioManager.onFocus();
+      window.addEventListener('blur',  this._onBlur);
+      window.addEventListener('focus', this._onFocus);
+    }
+
+    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
+      unsubStart(); unsubEnd();
+      combatState.reset();
+      audio.AudioManager.stopMusic(0);
+      if (this._audioBlurBound) {
+        window.removeEventListener('blur',  this._onBlur);
+        window.removeEventListener('focus', this._onFocus);
+        this._audioBlurBound = false;
+      }
+    });
 
     // Debug: spawn red enemy at cursor (E).
     // Gated by DEBUG_ENEMY_SPAWN — flip to false before Prompt 11 ships
@@ -497,6 +534,13 @@ export class GameScene extends Phaser.Scene {
     const miniY = this.scale.height - HUD_BOTTOM - margin - miniSize;
     if (pointer.x >= miniX && pointer.x <= miniX + miniSize &&
         pointer.y >= miniY && pointer.y <= miniY + miniSize) return true;
+    // Audio panel (when open)
+    const ui = this.scene.get('UIScene');
+    if (ui && ui._audioPanelOpen && ui._audioPanelBounds) {
+      const b = ui._audioPanelBounds;
+      if (pointer.x >= b.x && pointer.x <= b.x + b.w &&
+          pointer.y >= b.y && pointer.y <= b.y + b.h) return true;
+    }
     return false;
   }
 
@@ -873,7 +917,7 @@ export class GameScene extends Phaser.Scene {
           const s = new Soldier(this, x, y, { team, isKnight });
           gameState.soldiers.push(s);
           this.emitSparkles(s.pixelX, s.pixelY);
-          if (team === 'blue') audio.play('train_complete');
+          if (team === 'blue') audio.AudioManager.playSfx('level-up');
           return s;
         }
       }
@@ -893,7 +937,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   _showWaveWarning(waveNumber) {
-    audio.play('wave_warning');
     const ui = this.scene.get('UIScene');
     if (ui && ui.showToast) ui.showToast(`⚠️ Red army approaches! (Wave ${waveNumber})`, 4800, 0xff4444);
 
@@ -970,13 +1013,14 @@ export class GameScene extends Phaser.Scene {
       else if (p.y > this.scale.height - pad && p.y <= this.scale.height) cam.scrollY += speed * dt;
     }
 
-    // Fog of war — recompute every 250ms
+    // 250ms background systems: fog of war + combat-state detection
     this._fowAccum = (this._fowAccum || 0) + delta;
     if (this._fowAccum >= 250) {
       this._fowAccum = 0;
       computeFog('blue');
       this._updateFogOverlay();
       this._applyFogToEnemies();
+      combatState.tick(this.time.now);
     }
   }
 
@@ -1046,10 +1090,12 @@ export class GameScene extends Phaser.Scene {
       this.tweens.pauseAll();
       this.anims.pauseAll();
       this.time.paused = true;
+      audio.AudioManager.pauseAll();
     } else {
       this.tweens.resumeAll();
       this.anims.resumeAll();
       this.time.paused = false;
+      audio.AudioManager.resumeAll();
     }
     const ui = this.scene.get('UIScene');
     if (ui && ui.setPauseOverlay) ui.setPauseOverlay(gameState.paused);
@@ -1111,7 +1157,7 @@ export class GameScene extends Phaser.Scene {
     const reward = rollChestReward();
     this._applyChestReward(reward, team, chest, collector);
     this.emitSparkles(chest.sprite.x, chest.sprite.y);
-    if (team === 'blue') audio.play('chest_open');
+    if (team === 'blue') audio.AudioManager.playSfx('collect-gold');
 
     if (team === 'blue') {
       gameState.stats.chestsOpened++;
@@ -1168,8 +1214,8 @@ export class GameScene extends Phaser.Scene {
   /* ---------------- Castle countdown ---------------- */
 
   _onBuildingCompleted(building) {
-    audio.play('build_complete');
-    if (building.type === 'castle' && building.team === 'blue') {
+    if (building.team === 'blue' && building.type === 'castle') {
+      audio.AudioManager.playSfx('upgrade');
       this._startCastleCountdown(building);
       this._attachCastleFlag(building);
     }
@@ -1192,7 +1238,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   _onBuildingDestroyed(building) {
-    audio.play('building_destroyed');
     if (building._flag) { building._flag.destroy(); building._flag = null; }
     if (building === this._playerCastle) {
       this._cancelCastleCountdown();
@@ -1274,7 +1319,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   _goToWinScene() {
-    audio.play('victory');
+    audio.AudioManager.stopMusic(1500);
+    this.time.delayedCall(1500, () => {
+      audio.AudioManager.playSfx('level-up');
+    });
     this.time.delayedCall(500, () => {
       this.scene.stop('UIScene');
       this.scene.start('WinScene');
@@ -1282,7 +1330,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   _goToLoseScene() {
-    audio.play('defeat');
+    audio.AudioManager.stopMusic(1500);
     this.time.delayedCall(500, () => {
       this.scene.stop('UIScene');
       this.scene.start('LoseScene');
@@ -1350,7 +1398,7 @@ export class GameScene extends Phaser.Scene {
           this.emitSparkles(v.pixelX, v.pixelY);
           if (team === 'blue') {
             this.emitHearts(v.pixelX, v.pixelY - 20);
-            audio.play('train_complete');
+            audio.AudioManager.playSfx('level-up');
             this.game.events.emit('populationChanged');
           }
           return v;

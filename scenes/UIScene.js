@@ -43,18 +43,23 @@ export class UIScene extends Phaser.Scene {
     this.popText = this.add.text(W / 2, TOP_H / 2, '', TEXT_STYLE).setOrigin(0.5);
     this.timerText = this.add.text(W - 68, TOP_H / 2, '⏱ 0:00', TEXT_STYLE).setOrigin(1, 0.5);
 
-    // Speaker toggle — top-right
-    this._muted = audio.isMuted() && audio.isMusicMuted();
-    this.speakerBtn = this.add.text(W - 16, TOP_H / 2, '🔊', {
+    // Speaker icon + expanded audio panel
+    this.speakerBtn = this.add.text(W - 16, TOP_H / 2, audio.AudioManager.isMuted() ? '🔇' : '🔊', {
       fontFamily: 'system-ui, sans-serif', fontSize: '22px'
     }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
     this.speakerBtn.on('pointerdown', (_p, _lx, _ly, event) => {
       if (event) event.stopPropagation();
-      audio.toggleAllMuted();
-      this._muted = audio.isMuted() && audio.isMusicMuted();
-      this.speakerBtn.setText(this._muted ? '🔇' : '🔊');
+      this._toggleAudioPanel();
     });
-    this._attachTooltip(this.speakerBtn, 'Toggle sound');
+    this._attachTooltip(this.speakerBtn, 'Audio settings');
+
+    this._audioPanelOpen = false;
+    this._buildAudioPanel();
+
+    // Keep icon in sync with AudioManager state changes
+    this._audioUnsub = audio.AudioManager.onChange(() => {
+      this.speakerBtn.setText(audio.AudioManager.isMuted() ? '🔇' : '🔊');
+    });
 
     this.bottomContainer = this.add.container(0, H - BOTTOM_H);
 
@@ -89,11 +94,124 @@ export class UIScene extends Phaser.Scene {
       this.game.events.off('resourcesChanged', this._onResourcesChanged, this);
       this.game.events.off('populationChanged', this._onPopulationChanged, this);
       this.game.events.off('selectionChanged', this.refreshSelection, this);
+      if (this._audioUnsub) this._audioUnsub();
     });
   }
 
   setPauseOverlay(on) {
     if (this._pauseOverlay) this._pauseOverlay.setVisible(on);
+  }
+
+  /* ---------------- audio panel ---------------- */
+
+  _buildAudioPanel() {
+    const pw = 220, ph = 132;
+    const px = this.W - pw - 10;
+    const py = TOP_H + 8;
+
+    const panel = this.add.container(0, 0).setDepth(4000).setVisible(false);
+    const bg = this.add.rectangle(px, py, pw, ph, 0x000000, 0.85)
+      .setOrigin(0, 0).setStrokeStyle(2, 0xffe066, 0.7);
+
+    const settings = audio.AudioManager.getSettings();
+
+    const musicLabel = this.add.text(px + 12, py + 10, '🎵 Music', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffffff'
+    });
+    const musicSlider = this._makeSlider(px + 12, py + 34, pw - 24, settings.musicVolume, (v) => {
+      audio.AudioManager.setMusicVolume(v);
+    });
+
+    const sfxLabel = this.add.text(px + 12, py + 54, '🔊 SFX', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffffff'
+    });
+    const sfxSlider = this._makeSlider(px + 12, py + 78, pw - 24, settings.sfxVolume, (v) => {
+      audio.AudioManager.setSfxVolume(v);
+    });
+
+    // Mute-all checkbox
+    const cbSize = 14;
+    const cbX = px + 12, cbY = py + 100;
+    const cbBox = this.add.rectangle(cbX, cbY, cbSize, cbSize, 0x222222, 1)
+      .setOrigin(0, 0).setStrokeStyle(1, 0xffffff)
+      .setInteractive({ useHandCursor: true });
+    const cbMark = this.add.text(cbX + 2, cbY - 2, '✓', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffe066', fontStyle: 'bold'
+    }).setVisible(settings.muted);
+    const cbLabel = this.add.text(cbX + cbSize + 8, cbY - 2, 'Mute all', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffffff'
+    }).setInteractive({ useHandCursor: true });
+
+    const toggleMute = () => {
+      if (audio.AudioManager.isMuted()) audio.AudioManager.unmuteAll();
+      else audio.AudioManager.muteAll();
+      cbMark.setVisible(audio.AudioManager.isMuted());
+    };
+    cbBox.on('pointerdown', (_p, _lx, _ly, e) => { if (e) e.stopPropagation(); toggleMute(); });
+    cbLabel.on('pointerdown', (_p, _lx, _ly, e) => { if (e) e.stopPropagation(); toggleMute(); });
+
+    panel.add([bg, musicLabel, ...musicSlider.nodes, sfxLabel, ...sfxSlider.nodes, cbBox, cbMark, cbLabel]);
+    this._audioPanel = panel;
+    this._audioPanelBounds = { x: px, y: py, w: pw, h: ph };
+    this._musicSliderApi = musicSlider;
+    this._sfxSliderApi = sfxSlider;
+
+    // Click outside panel closes it
+    this._clickOutsideHandler = (pointer) => {
+      if (!this._audioPanelOpen) return;
+      const b = this._audioPanelBounds;
+      const overPanel = pointer.x >= b.x && pointer.x <= b.x + b.w &&
+                        pointer.y >= b.y && pointer.y <= b.y + b.h;
+      const overSpeaker = this.speakerBtn.getBounds().contains(pointer.x, pointer.y);
+      if (!overPanel && !overSpeaker) this._toggleAudioPanel();
+    };
+    this.input.on('pointerdown', this._clickOutsideHandler);
+  }
+
+  _toggleAudioPanel() {
+    this._audioPanelOpen = !this._audioPanelOpen;
+    if (this._audioPanel) this._audioPanel.setVisible(this._audioPanelOpen);
+    if (this._audioPanelOpen) {
+      const s = audio.AudioManager.getSettings();
+      this._musicSliderApi.setValue(s.musicVolume);
+      this._sfxSliderApi.setValue(s.sfxVolume);
+    }
+  }
+
+  _makeSlider(x, y, width, initial, onChange) {
+    const h = 6;
+    const track = this.add.rectangle(x, y, width, h, 0x444444, 1).setOrigin(0, 0.5);
+    const fill  = this.add.rectangle(x, y, width * initial, h, 0xffe066, 1).setOrigin(0, 0.5);
+    const knob  = this.add.circle(x + width * initial, y, 8, 0xffffff, 1)
+      .setStrokeStyle(1, 0x222222);
+
+    const hit = this.add.rectangle(x, y, width, 22, 0xffffff, 0.001)
+      .setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+
+    let value = initial;
+    const setValue = (v) => {
+      value = Math.max(0, Math.min(1, v));
+      fill.width = width * value;
+      knob.x = x + width * value;
+    };
+    const updateFromPointer = (pointer) => {
+      const v = Math.max(0, Math.min(1, (pointer.x - x) / width));
+      setValue(v);
+      onChange(v);
+    };
+    hit.on('pointerdown', (p, _lx, _ly, e) => {
+      if (e) e.stopPropagation();
+      updateFromPointer(p);
+      this._sliderDragging = { update: updateFromPointer };
+    });
+    this.input.on('pointermove', (p) => {
+      if (p.isDown && this._sliderDragging && this._sliderDragging.update === updateFromPointer) {
+        updateFromPointer(p);
+      }
+    });
+    this.input.on('pointerup', () => { this._sliderDragging = null; });
+
+    return { nodes: [track, fill, knob, hit], setValue, getValue: () => value };
   }
 
   /* ---------------- minimap ---------------- */

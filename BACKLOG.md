@@ -14,6 +14,7 @@ Things to do later. Organized by priority bucket. Graduate items into the active
 
 ## Nice to have (small polish, not blocking)
 
+- [x] ~~**Dynamic combat music**~~ — shipped 2026-04-21 as D-012, supersedes D-011. Ideas: crossfade to attack variant while ≥1 enemy within 5 tiles of any player base, return to normal after N seconds of peace.
 - [ ] **Settings toggle: right-click vs double-click for actions** — classic RTS players may prefer right-click. Expose in a future settings menu. (D-010 defaulted to double-click for the target age group.)
 - [ ] Villager idle breathing animation occasionally plays random "look around" frame (spritesheet already has 4 frames; currently just loops them at 4fps).
 - [ ] Tooltips on HUD resource counters ("🪵 Wood: 50" → hover → "Used to build and train").

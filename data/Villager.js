@@ -263,7 +263,9 @@ export class Villager {
     this.setState('working');
 
     const color = this._workColor(resourceType);
-    if (this.team === 'blue') audio.play(resourceType === 'wood' ? 'chop' : 'gather');
+    if (this.team === 'blue') {
+      audio.AudioManager.playSelectionAwareSfx('villager-action', this, { pitch: 0.9 + Math.random() * 0.2 });
+    }
     scene.emitWorkParticles(this.container.x, this.container.y - 8, color);
     this._workParticleTimer = scene.time.addEvent({
       delay: 600, repeat: 2,
@@ -325,6 +327,9 @@ export class Villager {
     this.setState('working');
 
     const color = this._workColor(resourceType);
+    if (this.team === 'blue') {
+      audio.AudioManager.playSelectionAwareSfx('villager-action', this, { pitch: 0.9 + Math.random() * 0.2 });
+    }
     scene.emitWorkParticles(this.container.x, this.container.y - 8, color);
 
     const bw = isSpeedBoosted(this.team) ? gatherable.workMs * 0.666 : gatherable.workMs;
@@ -415,7 +420,13 @@ export class Villager {
         else if (type === 'gold') econ.gold += amount;
         this.inventory = null;
         this._hideCarryIcon();
-        if (this.team === 'blue') scene.game.events.emit('resourcesChanged');
+        if (this.team === 'blue') {
+          scene.game.events.emit('resourcesChanged');
+          const sfxKey = type === 'wood' ? 'collect-wood'
+                       : type === 'food' ? 'collect-food'
+                       : 'collect-gold';
+          audio.AudioManager.playSelectionAwareSfx(sfxKey, this, { pitch: 0.9 + Math.random() * 0.2 });
+        }
       }
       if (onDone) onDone();
     }, 'carrying');

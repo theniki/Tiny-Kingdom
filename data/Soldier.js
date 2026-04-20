@@ -254,7 +254,9 @@ export class Soldier {
   }
 
   _doAttack(target) {
-    if (this.team === 'blue') audio.play('attack_hit');
+    if (this.team === 'blue') {
+      audio.AudioManager.playSelectionAwareSfx('guard-action', this, { pitch: 0.95 + Math.random() * 0.1 });
+    }
     this.scene.tweens.add({
       targets: this.sprite,
       scaleX: 1.2, scaleY: 1.2,

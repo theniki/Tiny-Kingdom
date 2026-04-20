@@ -3,6 +3,7 @@ import { TILE_SIZE } from './constants.js';
 import { gameState } from './gameState.js';
 import { UNIT_DEFS, BUILDING_TYPES, canAffordWith, spend } from './buildings.js';
 import { econFor } from './gameState.js';
+import { AudioManager } from '../systems/audio.js';
 
 const QUEUE_MAX = 5;
 
@@ -300,6 +301,7 @@ export class Building {
     if (this._upgradeBarBg) { this._upgradeBarBg.destroy(); this._upgradeBarBg = null; }
 
     this.scene.emitSparkles(this.centerX, this.centerY);
+    if (this.team === 'blue') AudioManager.playSfx('upgrade');
     this.scene.game.events.emit('buildingUpgraded', this);
     this.scene.game.events.emit('selectionChanged', gameState.selected);
   }
@@ -344,6 +346,7 @@ export class Building {
         if (this._upgradeBar) { this._upgradeBar.destroy(); this._upgradeBar = null; }
         if (this._upgradeBarBg) { this._upgradeBarBg.destroy(); this._upgradeBarBg = null; }
         this.scene.emitSparkles(this.centerX, this.centerY);
+        if (this.team === 'blue') AudioManager.playSfx('level-up');
         this.scene.game.events.emit('selectionChanged', gameState.selected);
       }
     });
